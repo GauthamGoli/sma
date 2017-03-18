@@ -6,6 +6,9 @@ import feedparser
 from newspaper import Article
 from bs4 import BeautifulSoup
 from cik import maps
+from nltk.tokenize import word_tokenize
+from nltk.corpus import stopwords
+from string import punctuation
 
 
 class GoogleNewsScraper:
@@ -177,16 +180,46 @@ class K8Scraper:
         return self.k8_filings_parsed
 
 
+class ArticleAnalyser:
+    def __init__(self):
+        self._stopwords = set(list(punctuation))
+        with open('finance.json') as datafile:
+            self._senti_lexicon = json.load(datafile)
+
+    def analyse(self, article):
+        """
+        Returns the overall sentiment based on the socialsent's Financial lexicon
+        Takes newspaper's article object as the argument
+        :param article:
+        :return:
+        """
+        words = [word.strip(punctuation) for word in word_tokenize(article.text.lower())]
+        senti_score = 0
+        for word in words:
+            if word in self._senti_lexicon:
+                senti_score += self._senti_lexicon[word]
+
+        return [article, senti_score]
+
 if __name__ == '__main__':
 
+    # Examples
+    # Scrape current DOW 30 prices
     dowToday = Dow30Scraper()
     dowToday.scrape_prices()
 
+    # Scrape and parse news related to company
     googleNews = GoogleNewsScraper()
     googleNews.query('3M')
     article_objects_news = googleNews.parse_news_articles()
 
+
     k8scraper = K8Scraper()
-    # Fetch recent k8 filings for American Express
-    k8scraper.fetch_recent_k8_filings('AXP')
+    # Fetch recent k8 filings for a Company
+    k8scraper.fetch_recent_k8_filings('MMM')
     article_objects_k8_axp = k8scraper.parse_k8_filings()
+
+    analyser = ArticleAnalyser()
+
+    for article_obj in article_objects_news:
+        print analyser.analyse(article_obj)
