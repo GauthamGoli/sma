@@ -5,6 +5,7 @@ import threading
 import datetime
 import feedparser
 import matplotlib
+from multiprocessing import Pool
 from urllib.request import urlopen
 from queue import Queue
 import matplotlib.pyplot as plt
@@ -14,8 +15,10 @@ from cik import maps
 from nltk.tokenize import word_tokenize
 from nltk.corpus import stopwords
 from string import punctuation
+import time
 
 matplotlib.rcParams.update({'font.size': 8})
+
 
 class GoogleNewsScraper:
     def __init__(self):
@@ -76,6 +79,7 @@ class GoogleNewsScraper:
 
         return self.article_objects_parsed
 
+
 class YahooFinanceNewsScaper:
     def __init__(self):
         self.finance_url = 'http://finance.yahoo.com/rss/headline?s={company_name}'
@@ -114,6 +118,7 @@ class YahooFinanceNewsScaper:
             except Exception as e:
                 continue
         return self.article_objects_parsed
+
 
 class Dow30Scraper:
     def __init__(self):
@@ -206,6 +211,7 @@ class K8Scraper:
             if filing_date > date_limit:
                 self.k8_urls.append(self.scrape_k8_url(entry['filing-href']))
 
+    @staticmethod
     def scrape_k8_url(self, url):
         """
         Helper method to scrape the url of 8-K filing
@@ -258,6 +264,7 @@ class ArticleAnalyser:
 
         return [article, senti_score]
 
+
 def download_and_parse(article_url, yahoo):
     try:
         article = Article(article_url)
@@ -266,6 +273,7 @@ def download_and_parse(article_url, yahoo):
         yahoo.article_objects_parsed.append(article)
     except Exception as e:
         pass
+
 
 def worker():
     while True:
@@ -278,9 +286,10 @@ if __name__ == '__main__':
 
     # Examples
     # Scrape current DOW 30 prices
+    start_time = time.time()
     dowToday = Dow30Scraper()
     companies = dowToday.scrape_prices()
-
+    companies = [companies[0]]
     # Scrape and parse news related to company
     yahooNews = YahooFinanceNewsScaper()
     analyser = ArticleAnalyser()
@@ -302,12 +311,28 @@ if __name__ == '__main__':
         colors = []
         for article_index,article_obj in enumerate(yahooNews.article_objects_parsed):
             article, senti_score = analyser.analyse(article_obj)
+            article_obj.senti_score = senti_score
             x.append(article_index)
             y.append(senti_score)
             if senti_score >= 0:
                 colors.append('blue')
+
             else:
                 colors.append('red')
+
+        if company['change_percentage']>=0:
+            # Price of stock increased, output articles with non negative sentiment
+            for article_obj in reversed(sorted(yahooNews.article_objects_parsed, key = lambda article: article.senti_score)):
+                if article_obj.senti_score<0:
+                    break
+                print('{url}: {title}'.format(url=article_obj.url, title=article_obj.title))
+        if company['change_percentage']<0:
+            # If price of stock decreased, output articles with non positive sentiment
+            for article_obj in sorted(yahooNews.article_objects_parsed, key = lambda article: article.senti_score):
+                if article_obj.senti_score>0:
+                    break
+                print('{url}: {title}'.format(url=article_obj.url, title=article_obj.title))
+
         plt.subplot(5, 2, company_index+1)
         plt.tight_layout()
         if company_index == 4:
@@ -317,8 +342,10 @@ if __name__ == '__main__':
         plt.bar(x, y, color=colors)
         plt.title('{company}: {change}'.format(company=company['company_name'], change=company['change_percentage']))
 
-    plt.show()
+    #plt.show()
 
+    end_time = time.time()
+    print('Total time: {time}'.format(time = (end_time-start_time)/60.0))
 
     # k8scraper = K8Scraper()
     # # Fetch recent k8 filings for a Company
