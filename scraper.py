@@ -164,7 +164,7 @@ class Dow30Scraper:
 
         # Sort the companies according to change %
         self.dow30prices = sorted(self.dow30prices, key=lambda data: data['change_percentage'])
-        return self.dow30prices[:5] + self.dow30prices[-5:]
+        return self.dow30prices[:2] + self.dow30prices[-2:]
 
 
 class K8Scraper:
@@ -252,11 +252,11 @@ class ArticleAnalyser:
     def analyse(self, article):
         """
         Returns the overall sentiment based on the socialsent's Financial lexicon
-        Takes newspaper's article object as the argument
+        Takes article dict as the argument
         :param article:
         :return:
         """
-        words = [word.strip(punctuation) for word in word_tokenize(article.text.lower())]
+        words = [word.strip(punctuation) for word in word_tokenize(article['text'].lower())]
         senti_score = 0
         for word in words:
             if word in self._senti_lexicon:
@@ -265,22 +265,22 @@ class ArticleAnalyser:
         return [article, senti_score]
 
 
-def download_and_parse(article_url, yahoo):
+def download_and_parse(article_url):
     try:
         article = Article(article_url)
         article.download()
         article.parse()
-        yahoo.article_objects_parsed.append(article)
+
+        if article.text is not None:
+            return {'text': article.text,
+                    'title': article.title,
+                    'url': article.url}
+        else:
+            pass
     except Exception as e:
         pass
 
 
-def worker():
-    while True:
-        item = q.get()
-        url, yahooNews = item
-        download_and_parse(url, yahooNews)
-        q.task_done()
 
 if __name__ == '__main__':
 
@@ -289,29 +289,28 @@ if __name__ == '__main__':
     start_time = time.time()
     dowToday = Dow30Scraper()
     companies = dowToday.scrape_prices()
-    companies = [companies[0]]
     # Scrape and parse news related to company
     yahooNews = YahooFinanceNewsScaper()
     analyser = ArticleAnalyser()
     plt.figure(1)
     for company_index, company in enumerate(companies):
-        article_urls = yahooNews.fetch_news_results(company['symbol']).values()
-        q = Queue()
-        for i in range(4):
-            t = threading.Thread(target=worker)
-            t.daemon = True
-            t.start()
-        for url in article_urls:
-            q.put([url, yahooNews])
+        start_time_cp = time.time()
 
-        q.join()
+        article_urls = yahooNews.fetch_news_results(company['symbol']).values()
+        end_time_dl = time.time()
+        print('Time to fetch RSS feed for {} : {}'.format(company['symbol'], start_time_cp-end_time_dl)) # Debug statement, Remove before final submission
+        with Pool(5) as p:
+            article_list = p.map(download_and_parse, article_urls)
+        yahooNews.article_objects_parsed = [article for article in article_list if article is not None]
+        end_time_cp = time.time()
+        print('time to fetch for a company: {}'.format(end_time_cp-start_time_cp)) # Debug statement, Remove before final submission
         print(company['company_name'], ': Change % :', company['change_percentage'])
         x = []
         y = []
         colors = []
-        for article_index,article_obj in enumerate(yahooNews.article_objects_parsed):
+        for article_index, article_obj in enumerate(yahooNews.article_objects_parsed):
             article, senti_score = analyser.analyse(article_obj)
-            article_obj.senti_score = senti_score
+            article_obj['senti_score'] = senti_score
             x.append(article_index)
             y.append(senti_score)
             if senti_score >= 0:
@@ -320,20 +319,20 @@ if __name__ == '__main__':
             else:
                 colors.append('red')
 
-        if company['change_percentage']>=0:
+        if company['change_percentage'] >= 0:
             # Price of stock increased, output articles with non negative sentiment
-            for article_obj in reversed(sorted(yahooNews.article_objects_parsed, key = lambda article: article.senti_score)):
-                if article_obj.senti_score<0:
+            for article_obj in reversed(sorted(yahooNews.article_objects_parsed, key = lambda article: article['senti_score'])):
+                if article_obj['senti_score'] < 0:
                     break
-                print('{url}: {title}'.format(url=article_obj.url, title=article_obj.title))
-        if company['change_percentage']<0:
+                print('{url}: {title}'.format(url=article_obj['url'], title=article_obj['title']))
+        if company['change_percentage'] < 0:
             # If price of stock decreased, output articles with non positive sentiment
-            for article_obj in sorted(yahooNews.article_objects_parsed, key = lambda article: article.senti_score):
-                if article_obj.senti_score>0:
+            for article_obj in sorted(yahooNews.article_objects_parsed, key = lambda article: article['senti_score']):
+                if article_obj['senti_score']>0:
                     break
-                print('{url}: {title}'.format(url=article_obj.url, title=article_obj.title))
+                print('{url}: {title}'.format(url=article_obj['url'], title=article_obj['title']))
 
-        plt.subplot(5, 2, company_index+1)
+        plt.subplot(2, 2, company_index+1)
         plt.tight_layout()
         if company_index == 4:
             plt.ylabel("senti_score")
@@ -342,10 +341,10 @@ if __name__ == '__main__':
         plt.bar(x, y, color=colors)
         plt.title('{company}: {change}'.format(company=company['company_name'], change=company['change_percentage']))
 
-    #plt.show()
+    plt.show()
 
     end_time = time.time()
-    print('Total time: {time}'.format(time = (end_time-start_time)/60.0))
+    print('Total time: {time} seconds'.format(time=end_time-start_time))
 
     # k8scraper = K8Scraper()
     # # Fetch recent k8 filings for a Company
