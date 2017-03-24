@@ -276,10 +276,10 @@ class ArticleAnalyser:
         for pos_score in positive_sentiment_dataframe:
             total_positive_indicator += pos_score*positive_sentiment_dataframe[pos_score]
         for neg_score in negative_sentiment_dataframe:
-            total_negative_indicator += neg_score*negative_sentiment_dataframe[neg_score]
+            total_negative_indicator += abs(neg_score*negative_sentiment_dataframe[neg_score])
         total_neutral_indicator = neutral_sentiment_dataframe[0]
 
-        total_score = total_positive_indicator + total_negative_indicator + total_neutral_indicator
+        total_score = total_positive_indicator + abs(total_negative_indicator) + total_neutral_indicator
         try:
             degree_of_positivity = (total_positive_indicator/total_score)*100
             degree_of_negativity = (total_negative_indicator/total_score)*100
@@ -287,10 +287,10 @@ class ArticleAnalyser:
         except ZeroDivisionError:
             pass
 
-        return [article, total_score]
+        return [article, degree_of_positivity, abs(degree_of_negativity), degree_of_neutrality]
 
     def article_date_valid(self, article):
-        return article.publish_date.day <= 24 if article.publish_date is not None else True # article.publish_date.month ==3
+        return article.publish_date.day <= 24 and article.publish_date.day >=23 if article.publish_date is not None else True # article.publish_date.month ==3
 
     def download_and_parse(self, article_url):
         try:
