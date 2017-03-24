@@ -5,19 +5,19 @@ import threading
 import datetime
 import feedparser
 import matplotlib
+import datetime
 from multiprocessing import Pool
 from urllib.request import urlopen
-from queue import Queue
-import matplotlib.pyplot as plt
+from google import search
 from newspaper import Article
 from bs4 import BeautifulSoup
 from cik import maps
-from nltk.tokenize import word_tokenize
+from nltk.tokenize import word_tokenize, sent_tokenize
 from nltk.corpus import stopwords
 from string import punctuation
 import time
 
-matplotlib.rcParams.update({'font.size': 8})
+#matplotlib.rcParams.update({'font.size': 8})
 
 
 class GoogleNewsScraper:
@@ -25,51 +25,39 @@ class GoogleNewsScraper:
         """
         Scrape google news' first page results for a queried company
         """
-        self.user_agent = "Mozilla/5.0 (X11; U; Linux i686) Gecko/20071127 Firefox/2.0.0.11"
-
-    def query(self, company_name):
-        """
-        This method constructs the request objects for a particular query
-        :param search_terms:
-        :return:
-        """
-        self.web_request = urllib.request.Request('https://www.google.com/search?q={query}'.format(query=company_name))
-        self.news_request = urllib.request.Request('https://www.google.com/search?q={query}&tbm=nws'.format(query=company_name))
-        self.web_request.add_header('User-Agent', self.user_agent)
-        self.news_request.add_header('User-Agent', self.user_agent)
+        self.kwargs = {'tpe': 'nws',
+                       'stop': 15,
+                       'tbs': 'cdr:1,cd_min:3/23/2017,cd_max:3/21/2017'}
         self.article_objects_parsed = []
 
-    def fetch_news_results(self):
+    def fetch_news_results(self, company_name):
         """
         This method returns the first page search result urls in a dictionary representation
         for newspaper module to parse them.
         :return:
         """
         try:
-            news_response = urlopen(self.news_request)
+            news_search_links = list(search(company_name, **self.kwargs))
+            result_links = [link for link in news_search_links]
+            print('GoogleNews scraped!')
         except:
-            return []
-        news_response_html = news_response.read()
-        soup = BeautifulSoup(news_response_html, 'html.parser')
-        news_soup_body = soup.body
-        news_search_links = [search_result.a.get("href").strip('/url?q=')
-                             for search_result in news_soup_body.find_all("h3")]
-        cleaned = {'news-'+str(index): link[:link.index('&sa')] for index, link in enumerate(news_search_links)}
-        return cleaned
+            result_links = []
 
-    def fetch_json_result(self):
+        return result_links
+
+    def fetch_json_result(self, company_name):
         """
         Returns json representation of the results.
         :return:
         """
-        return json.dumps({"news": self.fetch_news_results()})
+        return json.dumps({"news": self.fetch_news_results(company_name)})
 
-    def parse_news_articles(self):
+    def parse_news_articles(self, company_name):
         """
         Returns newspaper's Article instances of the scraped first page news results
         :return:
         """
-        news_urls_dict = self.fetch_news_results()
+        news_urls_dict = self.fetch_news_results(company_name)
         for id in news_urls_dict:
             url = news_urls_dict[id]
             article = Article(url)
@@ -80,7 +68,7 @@ class GoogleNewsScraper:
         return self.article_objects_parsed
 
 
-class YahooFinanceNewsScaper:
+class YahooFinanceNewsScraper:
     def __init__(self):
         self.finance_url = 'http://finance.yahoo.com/rss/headline?s={company_name}'
         self.article_objects_parsed = []
@@ -92,13 +80,16 @@ class YahooFinanceNewsScaper:
         :return:
         """
         self.article_objects_parsed = []
-        feed = feedparser.parse('http://finance.yahoo.com/rss/headline?'+
-                                urllib.parse.urlencode({'s':company_name}))
+        try:
+            feed = feedparser.parse('http://finance.yahoo.com/rss/headline?'+
+                                    urllib.parse.urlencode({'s':company_name}))
 
-        news_search_links = [search_result.link
-                             for search_result in feed['entries']]
-        cleaned = {'news-' + str(index): link for index, link in enumerate(news_search_links)}
-        return cleaned
+            result_links = [search_result.link
+                                 for search_result in feed['entries']]
+            print('Yahoo News scraped!')
+        except:
+            result_links = []
+        return result_links
 
     def parse_news_articles(self, company_name):
         """
@@ -234,7 +225,8 @@ class K8Scraper:
         for k8_url in self.k8_urls:
             try:
                 article = Article(k8_url)
-                article.download()
+                while not article.is_downloaded:
+                    article.download()
                 article.parse()
                 self.k8_filings_parsed.append(article)
             except Exception as e:
@@ -256,97 +248,69 @@ class ArticleAnalyser:
         :param article:
         :return:
         """
-        words = [word.strip(punctuation) for word in word_tokenize(article['text'].lower())]
-        senti_score = 0
-        for word in words:
-            if word in self._senti_lexicon:
-                senti_score += self._senti_lexicon[word]
-
-        return [article, senti_score]
-
-
-def download_and_parse(article_url):
-    try:
-        article = Article(article_url)
-        article.download()
-        article.parse()
-
-        if article.text is not None:
-            return {'text': article.text,
-                    'title': article.title,
-                    'url': article.url}
-        else:
-            pass
-    except Exception as e:
-        pass
-
-
-
-if __name__ == '__main__':
-
-    # Examples
-    # Scrape current DOW 30 prices
-    start_time = time.time()
-    dowToday = Dow30Scraper()
-    companies = dowToday.scrape_prices()
-    # Scrape and parse news related to company
-    yahooNews = YahooFinanceNewsScaper()
-    analyser = ArticleAnalyser()
-    plt.figure(1)
-    for company_index, company in enumerate(companies):
-        start_time_cp = time.time()
-
-        article_urls = yahooNews.fetch_news_results(company['symbol']).values()
-        end_time_dl = time.time()
-        print('Time to fetch RSS feed for {} : {}'.format(company['symbol'], start_time_cp-end_time_dl)) # Debug statement, Remove before final submission
-        with Pool(5) as p:
-            article_list = p.map(download_and_parse, article_urls)
-        yahooNews.article_objects_parsed = [article for article in article_list if article is not None]
-        end_time_cp = time.time()
-        print('time to fetch for a company: {}'.format(end_time_cp-start_time_cp)) # Debug statement, Remove before final submission
-        print(company['company_name'], ': Change % :', company['change_percentage'])
-        x = []
-        y = []
-        colors = []
-        for article_index, article_obj in enumerate(yahooNews.article_objects_parsed):
-            article, senti_score = analyser.analyse(article_obj)
-            article_obj['senti_score'] = senti_score
-            x.append(article_index)
-            y.append(senti_score)
-            if senti_score >= 0:
-                colors.append('blue')
-
+        positive_sentiment_dataframe = {} # Positive score: Number of sentences with that score
+        negative_sentiment_dataframe = {} # Negative score: Number of sentences with that score
+        neutral_sentiment_dataframe = {0:0} # 0: Number of sentences with that score
+        total_positive_indicator = 0
+        total_negative_indicator = 0
+        total_neutral_indicator = 0
+        sentences = [sentence for sentence in sent_tokenize(article['text'])]
+        for sentence in sentences:
+            sentence_words = [word.strip(punctuation).lower() for word in word_tokenize(sentence)]
+            sentence_sentiment_score = 0
+            for word in sentence_words:
+                sentence_sentiment_score += self._senti_lexicon[word] if word in self._senti_lexicon else 0
+            if sentence_sentiment_score > 0:
+                if sentence_sentiment_score in positive_sentiment_dataframe:
+                    positive_sentiment_dataframe[sentence_sentiment_score] += 1
+                else:
+                    positive_sentiment_dataframe[sentence_sentiment_score] = 1
+            elif sentence_sentiment_score < 0:
+                if sentence_sentiment_score in negative_sentiment_dataframe:
+                    negative_sentiment_dataframe[sentence_sentiment_score] += 1
+                else:
+                    negative_sentiment_dataframe[sentence_sentiment_score] = 1
             else:
-                colors.append('red')
+                neutral_sentiment_dataframe[0] += 1
 
-        if company['change_percentage'] >= 0:
-            # Price of stock increased, output articles with non negative sentiment
-            for article_obj in reversed(sorted(yahooNews.article_objects_parsed, key = lambda article: article['senti_score'])):
-                if article_obj['senti_score'] < 0:
-                    break
-                print('{url}: {title}'.format(url=article_obj['url'], title=article_obj['title']))
-        if company['change_percentage'] < 0:
-            # If price of stock decreased, output articles with non positive sentiment
-            for article_obj in sorted(yahooNews.article_objects_parsed, key = lambda article: article['senti_score']):
-                if article_obj['senti_score']>0:
-                    break
-                print('{url}: {title}'.format(url=article_obj['url'], title=article_obj['title']))
+        for pos_score in positive_sentiment_dataframe:
+            total_positive_indicator += pos_score*positive_sentiment_dataframe[pos_score]
+        for neg_score in negative_sentiment_dataframe:
+            total_negative_indicator += neg_score*negative_sentiment_dataframe[neg_score]
+        total_neutral_indicator = neutral_sentiment_dataframe[0]
 
-        plt.subplot(2, 2, company_index+1)
-        plt.tight_layout()
-        if company_index == 4:
-            plt.ylabel("senti_score")
-        if company_index == 8:
-            plt.xlabel("article_index")
-        plt.bar(x, y, color=colors)
-        plt.title('{company}: {change}'.format(company=company['company_name'], change=company['change_percentage']))
+        total_score = total_positive_indicator + total_negative_indicator + total_neutral_indicator
+        try:
+            degree_of_positivity = (total_positive_indicator/total_score)*100
+            degree_of_negativity = (total_negative_indicator/total_score)*100
+            degree_of_neutrality = (total_neutral_indicator/total_score)*100
+        except ZeroDivisionError:
+            pass
 
-    plt.show()
+        return [article, total_score]
 
-    end_time = time.time()
-    print('Total time: {time} seconds'.format(time=end_time-start_time))
+    def article_date_valid(self, article):
+        return article.publish_date.day <= 24 if article.publish_date is not None else True # article.publish_date.month ==3
 
-    # k8scraper = K8Scraper()
-    # # Fetch recent k8 filings for a Company
-    # k8scraper.fetch_recent_k8_filings('UNH')
-    # article_objects_k8_axp = k8scraper.parse_k8_filings()
+    def download_and_parse(self, article_url):
+        try:
+            article = Article(article_url)
+            while not article.is_downloaded:
+                article.download()
+            article.parse()
+            if 'finance.yahoo.com' in article_url:
+                publish_time_tag = BeautifulSoup(article.html,'html.parser').find_all(itemprop="datePublished")[0].get('content')
+                article.publish_date = datetime.datetime.strptime(publish_time_tag, '%Y-%m-%dT%H:%M:%SZ')
+            if self.article_date_valid(article):
+                print(article.publish_date, 'date')
+                print(article.title, 'downloaded')
+                print(article_url)
+                return {'text': article.text,
+                        'title': article.title,
+                        'url': article.url}
+            else:
+                pass
+        except Exception as e:
+            print(article_url)
+            print("download error: {}".format(e))
+            pass
