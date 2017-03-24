@@ -27,7 +27,7 @@ class GoogleNewsScraper:
         """
         self.kwargs = {'tpe': 'nws',
                        'stop': 15,
-                       'tbs': 'cdr:1,cd_min:3/23/2017,cd_max:3/21/2017'}
+                       'tbs': 'cdr:1,cd_min:3/24/2017,cd_max:3/23/2017'}
         self.article_objects_parsed = []
 
     def fetch_news_results(self, company_name):
@@ -295,8 +295,12 @@ class ArticleAnalyser:
     def download_and_parse(self, article_url):
         try:
             article = Article(article_url)
-            while not article.is_downloaded:
+            retry_limits = 20
+            retry_count = 0
+            while not article.is_downloaded and retry_count<retry_limits:
                 article.download()
+                retry_count += 1
+                print('Retrying for {} time(s)'.format(retry_count))
             article.parse()
             if 'finance.yahoo.com' in article_url:
                 publish_time_tag = BeautifulSoup(article.html,'html.parser').find_all(itemprop="datePublished")[0].get('content')

@@ -15,6 +15,7 @@ def write_output(stock, text):
 start_time = time.time()
 dowToday = Dow30Scraper()
 companies = dowToday.scrape_prices()
+article_urls = []
 # Scrape and parse news related to company
 yahooNews = YahooFinanceNewsScraper()
 googleNews = GoogleNewsScraper()
@@ -23,8 +24,9 @@ plt.figure(1)
 for company_index, company in enumerate(companies):
     start_time_cp = time.time()
 
-    article_urls = yahooNews.fetch_news_results(company['symbol'])
-
+    article_urls = googleNews.fetch_news_results(company['company_name'])
+   # article_urls = yahooNews.fetch_news_results(company['symbol'])
+    
     print(article_urls)
     end_time_dl = time.time()
     print('Time to fetch RSS feed for {} : {}'.format(company['symbol'],

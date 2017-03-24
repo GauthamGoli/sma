@@ -20,6 +20,11 @@ The link to complete souce code is https://github.com/gauthamgoli/sma
  - A small set of seed words were used to induce accurate domain-specific(in this case **financial** domain) sentiment lexicon achieveing performance comparable with approaches that rely on hand curated resources.
  - To do the Natural Language Processing (NLP) we used the open source `SocialSent` (https://nlp.stanford.edu/projects/socialsent/) package, and the lexicon was created from 8-K filings of publicly listed US companies.
 
+### Dependencies
+ - ```sudo apt-get install python-dev```
+ - ```sudo apt-get install libxml2-dev libxslt-dev```
+ - ```pip install -r requirements.txt```
+
 ## Implementation
 
 #####  What is an '8-K'
